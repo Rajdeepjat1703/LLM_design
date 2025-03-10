@@ -27,3 +27,55 @@ class CustomerUpdate(BaseModel):
     phone: Optional[str] = None
     address: Optional[str] = None
     gstNumber: Optional[str] = None
+def detect_intent(intent: str, data: Dict[str, Any]):
+    if intent == "create_customer":
+        return f"{NODEJS_API_BASE}/customer/customer-register", "POST", data
+    elif intent == "update_customer":
+        return f"{NODEJS_API_BASE}/customer/customer-register", "PUT", data
+    elif intent == "delete_customer":
+        return f"{NODEJS_API_BASE}/customer/customer-delete", "DELETE",data
+    elif intent == "get_outstanding_bill":
+        return f"{NODEJS_API_BASE}/customer/customer-outstanding", "GET",data
+    elif intent == "get_total_bill":
+        return f"{NODEJS_API_BASE}/customer/customer-totalBill", "GET", data
+    else:
+        raise HTTPException(status_code=400, detail=f"Invalid customer intent: {intent}")
+
+async def handle_intent(intent: str, data: Dict[str, Any], token: str = Depends(oauth2_scheme)):
+    if intent == "create_customer" and not all(k in data for k in ["name", "email", "phone"]):
+        raise HTTPException(status_code=400, detail="Name, email, and phone are required for creating a customer")
+    elif intent in ["update_customer", "delete_customer", "get_outstanding_bill", "get_total_bill"] and "customerId" not in data:
+        if "email" in data:
+            data["customerId"] = await get_customer_id(data["email"])
+        else:
+            raise HTTPException(status_code=400, detail="customerId or email is required")
+    
+    url, method, payload = detect_intent(intent, data)
+    headers = {"Authorization": f"Bearer {token}"}
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            if method == "POST":
+                response = await client.post(url, json=payload, headers=headers)
+            elif method == "PUT":
+                response = await client.put(url, json=payload, headers=headers)
+            elif method == "DELETE":
+                if payload:
+                    # Using the request method for DELETE with a JSON body
+                    response = await client.request("DELETE", url, json=payload, headers=headers)
+                else:
+                    response = await client.delete(url, headers=headers)
+            elif method == "GET":
+                if payload:
+                    response = await client.request("GET", url, json=payload, headers=headers)
+                else:
+                    response = await client.get(url, headers=headers)
+            else:
+                raise HTTPException(status_code=500, detail="Unsupported HTTP method")
+
+            if response.status_code >= 400:
+                error_detail = response.json() if response.headers.get("content-type") == "application/json" else response.text
+                raise HTTPException(status_code=response.status_code, detail=error_detail)
+            return response.json()
+        except httpx.RequestError as exc:
+            raise HTTPException(status_code=500, detail=f"API request failed: {str(exc)}")
