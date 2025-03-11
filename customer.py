@@ -22,15 +22,29 @@ class CustomerCreate(BaseModel):
     phone: str
 
 class CustomerUpdate(BaseModel):
+    
     name: Optional[str] = None
     email: Optional[EmailStr] = None
     phone: Optional[str] = None
     address: Optional[str] = None
     gstNumber: Optional[str] = None
+    outstandingBill: Optional[float] = None
+    TotalBill: Optional[float] = None
+    
+
+# Fetch customer_id from MongoDB
+async def get_customer_id(email: str):
+    customer = await db.customers.find_one({"email": email})
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    return str(customer["_id"])
+
+# Function to detect intent
 def detect_intent(intent: str, data: Dict[str, Any]):
     if intent == "create_customer":
         return f"{NODEJS_API_BASE}/customer/customer-register", "POST", data
     elif intent == "update_customer":
+        
         return f"{NODEJS_API_BASE}/customer/customer-register", "PUT", data
     elif intent == "delete_customer":
         return f"{NODEJS_API_BASE}/customer/customer-delete", "DELETE",data
@@ -50,6 +64,13 @@ async def handle_intent(intent: str, data: Dict[str, Any], token: str = Depends(
         else:
             raise HTTPException(status_code=400, detail="customerId or email is required")
     
+    # For update_customer, ensure we're passing all the possible update fields
+    if intent == "update_customer":
+        # Keep all fields that are not None
+        update_data = {k: v for k, v in data.items() if v is not None}
+        # Make sure we're not losing any fields from the original data
+        data = update_data
+    
     url, method, payload = detect_intent(intent, data)
     headers = {"Authorization": f"Bearer {token}"}
     
@@ -58,6 +79,7 @@ async def handle_intent(intent: str, data: Dict[str, Any], token: str = Depends(
             if method == "POST":
                 response = await client.post(url, json=payload, headers=headers)
             elif method == "PUT":
+                print(f"Sending update request with payload: {payload}")
                 response = await client.put(url, json=payload, headers=headers)
             elif method == "DELETE":
                 if payload:
