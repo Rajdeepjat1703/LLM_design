@@ -38,6 +38,13 @@ async def get_customer_id(email: str):
         raise HTTPException(status_code=404, detail="Customer not found")
     return str(customer["_id"])
 
+# Fetch customer_id from name
+async def get_customer_id_by_name(name: str):
+    customer = await db.customers.find_one({"name": name})
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    return str(customer["_id"])
+
 # Function to detect intent
 def detect_intent(intent: str, data: Dict[str, Any]):
     if intent == "create_customer":
@@ -50,6 +57,8 @@ def detect_intent(intent: str, data: Dict[str, Any]):
         return f"{NODEJS_API_BASE}/customer/customer-outstanding", "GET", data
     elif intent == "get_total_bill":
         return f"{NODEJS_API_BASE}/customer/customer-totalBill", "GET", data
+    elif intent == "get_customer_by_name" or intent == "get_customer_details":
+        return f"{NODEJS_API_BASE}/dealer/get-by-name", "POST", data
     else:
         raise HTTPException(status_code=400, detail=f"Invalid customer intent: {intent}")
 
@@ -57,21 +66,41 @@ async def handle_intent(intent: str, data: Dict[str, Any], token: str):
     """
     Handle customer intents with improved error handling for missing fields
     """
+    # For get_customer_details or get_customer_by_name with name but no customerId
+    if (intent == "get_customer_details" or intent == "get_customer_by_name") and "customerId" not in data:
+        if "name" in data:
+            try:
+                data["customerName"] = data["name"]  # Use name for the API endpoint
+                # Some APIs might still need ID, so try to get it but don't fail if we can't
+                try:
+                    data["customerId"] = await get_customer_id_by_name(data["name"])
+                except:
+                    pass
+            except Exception as e:
+                pass
+        elif "email" in data:
+            try:
+                data["customerId"] = await get_customer_id(data["email"])
+            except Exception as e:
+                pass
+    
     # For update_customer, delete_customer, get_outstanding_bill, get_total_bill
     # Try to get customerId from email if customerId not provided
-    if intent in ["update_customer", "delete_customer", "get_outstanding_bill", "get_total_bill"] and "customerId" not in data:
+    elif intent in ["update_customer", "delete_customer", "get_outstanding_bill", "get_total_bill"] and "customerId" not in data:
         if "email" in data:
             try:
                 data["customerId"] = await get_customer_id(data["email"])
             except Exception as e:
-                # Continue with the request and let the API handle the error
+                pass
+        elif "name" in data:
+            try:
+                data["customerId"] = await get_customer_id_by_name(data["name"])
+            except Exception as e:
                 pass
     
     # For update_customer, ensure we're passing all the possible update fields
     if intent == "update_customer":
-        # Keep all fields that are not None
         update_data = {k: v for k, v in data.items() if v is not None}
-        # Make sure we're not losing any fields from the original data
         data = update_data
     
     url, method, payload = detect_intent(intent, data)
@@ -82,18 +111,17 @@ async def handle_intent(intent: str, data: Dict[str, Any], token: str):
             if method == "POST":
                 response = await client.post(url, json=payload, headers=headers)
             elif method == "PUT":
+               
+                
                 response = await client.put(url, json=payload, headers=headers)
             elif method == "DELETE":
                 if payload:
-                    # Using the request method for DELETE with a JSON body
                     response = await client.request("DELETE", url, json=payload, headers=headers)
                 else:
                     response = await client.delete(url, headers=headers)
             elif method == "GET":
-                if payload:
-                    response = await client.request("GET", url, json=payload, headers=headers)
-                else:
-                    response = await client.get(url, headers=headers)
+                # For GET requests, use query parameters instead of JSON body
+                response = await client.get(url, params=payload, headers=headers)
             else:
                 raise HTTPException(status_code=500, detail="Unsupported HTTP method")
 

@@ -159,7 +159,8 @@ def check_required_fields(category: str, intent: str, data: Dict[str, Any]):
         if intent == "create_customer":
             required_fields = ["name", "email", "phone"]
         elif intent in ["update_customer", "delete_customer", "get_outstanding_bill", "get_total_bill"]:
-            required_fields = ["customerId"]
+            if "customerId" not in data and "name" not in data and "email" not in data:
+                required_fields = ["customerId"] 
     elif category == "business":
         if intent == "register_business":
             required_fields = ["name", "phone", "address", "pincode", "state", "businessCategory", "businessType"]
