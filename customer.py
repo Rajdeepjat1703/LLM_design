@@ -1,19 +1,20 @@
 from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel, EmailStr
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import httpx
 from fastapi.security import OAuth2PasswordBearer
 from motor.motor_asyncio import AsyncIOMotorClient
 import json 
+import os
 
 router = APIRouter(prefix="/customers", tags=["Customers"])
-NODEJS_API_BASE = "http://localhost:5000/api/v1"  # Update with actual Node.js API URL
+NODEJS_API_BASE = os.getenv("NODEJS_API_BASE", "http://localhost:5000/api/v1")  # Update with actual Node.js API URL
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 # MongoDB Connection
-MONGO_URI = "mongodb://localhost:27017"  # Update with actual MongoDB URI
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
 db_client = AsyncIOMotorClient(MONGO_URI)
-db = db_client.get_database("vypar")  # Update with actual database name
+db = db_client.get_database("vypar")
 
 # Pydantic Schemas
 class CustomerCreate(BaseModel):
@@ -22,7 +23,6 @@ class CustomerCreate(BaseModel):
     phone: str
 
 class CustomerUpdate(BaseModel):
-    
     name: Optional[str] = None
     email: Optional[EmailStr] = None
     phone: Optional[str] = None
@@ -30,7 +30,6 @@ class CustomerUpdate(BaseModel):
     gstNumber: Optional[str] = None
     outstandingBill: Optional[float] = None
     TotalBill: Optional[float] = None
-    
 
 # Fetch customer_id from MongoDB
 async def get_customer_id(email: str):
@@ -44,25 +43,29 @@ def detect_intent(intent: str, data: Dict[str, Any]):
     if intent == "create_customer":
         return f"{NODEJS_API_BASE}/customer/customer-register", "POST", data
     elif intent == "update_customer":
-        
         return f"{NODEJS_API_BASE}/customer/customer-register", "PUT", data
     elif intent == "delete_customer":
-        return f"{NODEJS_API_BASE}/customer/customer-delete", "DELETE",data
+        return f"{NODEJS_API_BASE}/customer/customer-delete", "DELETE", data
     elif intent == "get_outstanding_bill":
-        return f"{NODEJS_API_BASE}/customer/customer-outstanding", "GET",data
+        return f"{NODEJS_API_BASE}/customer/customer-outstanding", "GET", data
     elif intent == "get_total_bill":
         return f"{NODEJS_API_BASE}/customer/customer-totalBill", "GET", data
     else:
         raise HTTPException(status_code=400, detail=f"Invalid customer intent: {intent}")
 
-async def handle_intent(intent: str, data: Dict[str, Any], token: str = Depends(oauth2_scheme)):
-    if intent == "create_customer" and not all(k in data for k in ["name", "email", "phone"]):
-        raise HTTPException(status_code=400, detail="Name, email, and phone are required for creating a customer")
-    elif intent in ["update_customer", "delete_customer", "get_outstanding_bill", "get_total_bill"] and "customerId" not in data:
+async def handle_intent(intent: str, data: Dict[str, Any], token: str):
+    """
+    Handle customer intents with improved error handling for missing fields
+    """
+    # For update_customer, delete_customer, get_outstanding_bill, get_total_bill
+    # Try to get customerId from email if customerId not provided
+    if intent in ["update_customer", "delete_customer", "get_outstanding_bill", "get_total_bill"] and "customerId" not in data:
         if "email" in data:
-            data["customerId"] = await get_customer_id(data["email"])
-        else:
-            raise HTTPException(status_code=400, detail="customerId or email is required")
+            try:
+                data["customerId"] = await get_customer_id(data["email"])
+            except Exception as e:
+                # Continue with the request and let the API handle the error
+                pass
     
     # For update_customer, ensure we're passing all the possible update fields
     if intent == "update_customer":
@@ -79,7 +82,6 @@ async def handle_intent(intent: str, data: Dict[str, Any], token: str = Depends(
             if method == "POST":
                 response = await client.post(url, json=payload, headers=headers)
             elif method == "PUT":
-                print(f"Sending update request with payload: {payload}")
                 response = await client.put(url, json=payload, headers=headers)
             elif method == "DELETE":
                 if payload:
@@ -97,7 +99,16 @@ async def handle_intent(intent: str, data: Dict[str, Any], token: str = Depends(
 
             if response.status_code >= 400:
                 error_detail = response.json() if response.headers.get("content-type") == "application/json" else response.text
-                raise HTTPException(status_code=response.status_code, detail=error_detail)
-            return response.json()
+                return {
+                    "status": "error",
+                    "message": error_detail if isinstance(error_detail, str) else json.dumps(error_detail)
+                }
+            
+            result = response.json()
+            result["status"] = "success"
+            return result
         except httpx.RequestError as exc:
-            raise HTTPException(status_code=500, detail=f"API request failed: {str(exc)}")
+            return {
+                "status": "error",
+                "message": f"API request failed: {str(exc)}"
+            }
