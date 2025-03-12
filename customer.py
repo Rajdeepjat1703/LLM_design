@@ -8,13 +8,13 @@ import json
 import os
 
 router = APIRouter(prefix="/customers", tags=["Customers"])
-NODEJS_API_BASE = os.getenv("NODEJS_API_BASE", "http://localhost:5000/api/v1")  # Update with actual Node.js API URL
+NODEJS_API_BASE = "https://verce-ankurs-projects-b664b274.vercel.app/api/v1"  # Update with actual Node.js API URL
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 # MongoDB Connection
-MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
+MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://projectvaypar:Ankur@cluster0.vppsc.mongodb.net/")
 db_client = AsyncIOMotorClient(MONGO_URI)
-db = db_client.get_database("vypar")
+db = db_client.get_database("test")
 
 # Pydantic Schemas
 class CustomerCreate(BaseModel):
@@ -48,6 +48,7 @@ async def get_customer_id_by_name(name: str):
 # Function to detect intent
 def detect_intent(intent: str, data: Dict[str, Any]):
     if intent == "create_customer":
+        print(NODEJS_API_BASE)
         return f"{NODEJS_API_BASE}/customer/customer-register", "POST", data
     elif intent == "update_customer":
         return f"{NODEJS_API_BASE}/customer/customer-register", "PUT", data
@@ -109,6 +110,10 @@ async def handle_intent(intent: str, data: Dict[str, Any], token: str):
     async with httpx.AsyncClient() as client:
         try:
             if method == "POST":
+                print(f"Making POST request to: {url}")
+                print(f"Request Headers: {headers}")
+                print(f"Request Payload: {json.dumps(payload, indent=2)}")
+
                 response = await client.post(url, json=payload, headers=headers)
             elif method == "PUT":
                
