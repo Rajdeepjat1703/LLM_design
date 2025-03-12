@@ -17,8 +17,17 @@ from fastapi.security import OAuth2PasswordBearer
 from motor.motor_asyncio import AsyncIOMotorClient
 from datetime import datetime
 from bson import ObjectId
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="Vypar app")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins, you can restrict this to specific domains
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
+)
+
 
 # Load API Keys
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
