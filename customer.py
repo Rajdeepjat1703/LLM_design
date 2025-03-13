@@ -125,8 +125,11 @@ async def handle_intent(intent: str, data: Dict[str, Any], token: str):
                 else:
                     response = await client.delete(url, headers=headers)
             elif method == "GET":
-                # For GET requests, use query parameters instead of JSON body
-                response = await client.get(url, params=payload, headers=headers)
+                if payload:
+                    response = await client.request("GET", url, json=payload, headers=headers)
+                else:
+                    response = await client.get(url, headers=headers)
+
             else:
                 raise HTTPException(status_code=500, detail="Unsupported HTTP method")
 
@@ -145,3 +148,32 @@ async def handle_intent(intent: str, data: Dict[str, Any], token: str):
                 "status": "error",
                 "message": f"API request failed: {str(exc)}"
             }
+        
+
+# Pydantic model for customer deletion by name
+class CustomerDelete(BaseModel):
+    name: str
+
+# New endpoint to delete a customer using their name
+@router.delete("/delete/by-name")
+async def delete_customer_by_name(customer: CustomerDelete, token: str = Depends(oauth2_scheme)):
+    # Convert the request body to a dictionary
+    data = customer.dict()
+    
+    # Call the handle_intent function with the "delete_customer" intent.
+    result = await handle_intent("delete_customer", data, token)
+    
+    # If deletion failed, raise an error with the message from the Node.js API
+    if result.get("status") != "success":
+        raise HTTPException(status_code=400, detail=result.get("message"))
+    
+    # Wrap the response in the desired format.
+    # Here, we assume that result["data"] (or the entire result) contains the deleted customer's details.
+    return {
+        "statusCode": 200,
+        "data": result.get("data", result),
+        "message": "Customer deleted successfully",
+        "success": True,
+        "status": "success",
+        "conversation_id": "67d232676e7a77a715d19330"
+    }
