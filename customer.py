@@ -125,8 +125,11 @@ async def handle_intent(intent: str, data: Dict[str, Any], token: str):
                 else:
                     response = await client.delete(url, headers=headers)
             elif method == "GET":
-                # For GET requests, use query parameters instead of JSON body
-                response = await client.get(url, params=payload, headers=headers)
+                if payload:
+                    response = await client.request("GET", url, json=payload, headers=headers)
+                else:
+                    response = await client.get(url, headers=headers)
+
             else:
                 raise HTTPException(status_code=500, detail="Unsupported HTTP method")
 
